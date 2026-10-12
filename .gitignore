@@ -1,0 +1,42 @@
+# Project spec stays local, never committed
+VivaAI Project Spec.md
+
+# Secrets: commit .env.example only
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Node / web build output
+node_modules/
+dist/
+build/
+.next/
+.vite/
+
+# Local data: uploads, audio, vector store (never commit real student data)
+data/
+uploads/
+chroma/
+*.wav
+*.mp3
+*.webm
+*.ogg
+*.m4a
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
