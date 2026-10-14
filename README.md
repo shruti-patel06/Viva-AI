@@ -31,3 +31,17 @@ supabase start
 ```
 
 `supabase status` prints the local URLs and keys. `supabase db reset` rebuilds the database from the migrations.
+
+Create a teacher login (asks for a password):
+
+```
+python scripts/create_teacher.py teacher@college.edu "Full Name"
+```
+
+## Tests
+
+```
+supabase test db
+```
+
+runs the row-level security tests in `supabase/tests/`.
