@@ -63,6 +63,16 @@ def replace_document_chunks(document_id: str, subject_id: str, chunks: list[Chun
     )
 
 
+def experiment_chunks(document_id: str, experiment_id: str) -> list[str]:
+    """All of one experiment's text from one document, in reading order."""
+    result = _collection().get(
+        where={"$and": [{"document_id": document_id}, {"experiment_id": experiment_id}]},
+        include=["documents", "metadatas"],
+    )
+    ordered = sorted(zip(result["metadatas"], result["documents"]), key=lambda pair: pair[0]["chunk_index"])
+    return [text for _, text in ordered]
+
+
 def count_document_chunks(document_id: str) -> int:
     return len(_collection().get(where={"document_id": document_id}, include=[])["ids"])
 
