@@ -7,7 +7,7 @@ from typing import Any
 
 from app.core.db import transaction
 from app.jobs import queue
-from app.jobs.queue import MAX_ATTEMPTS, PermanentJobError
+from app.jobs.queue import MAX_ATTEMPTS, PermanentJobError, RetryLater
 
 log = logging.getLogger("worker")
 
@@ -41,6 +41,10 @@ def run_one(handlers: dict[str, Handler]) -> bool:
 
     try:
         handler.run(job.payload)
+    except RetryLater as wait:
+        log.info("job %s postponed %ss: %s", job.id, int(wait.delay.total_seconds()), wait)
+        with transaction() as conn:
+            queue.postpone(conn, job, wait.delay, str(wait))
     except PermanentJobError as error:
         _give_up(handler, job, str(error))
     except Exception as error:
