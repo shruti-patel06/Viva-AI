@@ -68,18 +68,20 @@ export default function TeacherPage() {
   async function upload(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!file || !subjectId) return;
+    // React clears event.currentTarget once the handler awaits, so keep the form now.
+    const formElement = event.currentTarget;
     setUploading(true);
     setUploadError(null);
-    const form = new FormData();
-    form.append("subject_id", subjectId);
-    form.append("file", file);
-    const response = await apiFetch("/documents", { method: "POST", body: form });
+    const body = new FormData();
+    body.append("subject_id", subjectId);
+    body.append("file", file);
+    const response = await apiFetch("/documents", { method: "POST", body });
     setUploading(false);
     if (!response.ok) {
       setUploadError(await errorMessage(response));
       return;
     }
-    event.currentTarget.reset();
+    formElement.reset();
     setFile(null);
     await loadDocuments();
   }
