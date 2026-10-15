@@ -5,9 +5,8 @@ import httpx
 from app.core.config import get_settings
 
 
-def _object_url(path: str) -> str:
-    settings = get_settings()
-    return f"{settings.supabase_url}/storage/v1/object/{settings.storage_bucket}/{path}"
+def _object_url(bucket: str, path: str) -> str:
+    return f"{get_settings().supabase_url}/storage/v1/object/{bucket}/{path}"
 
 
 def _headers() -> dict[str, str]:
@@ -15,22 +14,35 @@ def _headers() -> dict[str, str]:
     return {"apikey": key, "Authorization": f"Bearer {key}"}
 
 
-def upload(path: str, content: bytes, content_type: str) -> None:
+def upload(bucket: str, path: str, content: bytes, content_type: str, overwrite: bool = False) -> None:
     response = httpx.post(
-        _object_url(path),
+        _object_url(bucket, path),
         content=content,
-        headers={**_headers(), "Content-Type": content_type, "x-upsert": "false"},
+        headers={**_headers(), "Content-Type": content_type, "x-upsert": "true" if overwrite else "false"},
         timeout=60,
     )
     response.raise_for_status()
 
 
-def download(path: str) -> bytes:
-    response = httpx.get(_object_url(path), headers=_headers(), timeout=60)
+def download(bucket: str, path: str) -> bytes:
+    response = httpx.get(_object_url(bucket, path), headers=_headers(), timeout=60)
     response.raise_for_status()
     return response.content
 
 
-def remove(path: str) -> None:
-    response = httpx.delete(_object_url(path), headers=_headers(), timeout=60)
+def remove(bucket: str, path: str) -> None:
+    response = httpx.delete(_object_url(bucket, path), headers=_headers(), timeout=60)
     response.raise_for_status()
+
+
+def signed_url(bucket: str, path: str, expires_in_seconds: int = 600) -> str:
+    """A link anyone can open until it expires. The bucket itself stays private."""
+    settings = get_settings()
+    response = httpx.post(
+        f"{settings.supabase_url}/storage/v1/object/sign/{bucket}/{path}",
+        json={"expiresIn": expires_in_seconds},
+        headers=_headers(),
+        timeout=30,
+    )
+    response.raise_for_status()
+    return f"{settings.supabase_url}/storage/v1{response.json()['signedURL']}"
