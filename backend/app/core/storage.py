@@ -29,3 +29,8 @@ def download(path: str) -> bytes:
     response = httpx.get(_object_url(path), headers=_headers(), timeout=60)
     response.raise_for_status()
     return response.content
+
+
+def remove(path: str) -> None:
+    response = httpx.delete(_object_url(path), headers=_headers(), timeout=60)
+    response.raise_for_status()

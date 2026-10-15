@@ -18,7 +18,9 @@ log = logging.getLogger("worker")
 
 
 def handlers() -> dict[str, Handler]:
-    return {}
+    from app.modules.ingestion import ingest_job
+
+    return {"ingest": ingest_job.handler}
 
 
 def main() -> None:
