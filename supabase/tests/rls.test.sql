@@ -16,7 +16,7 @@ insert into auth.users (id, email, is_anonymous, raw_app_meta_data) values
     ('33333333-0000-0000-0000-000000000001', 'norole@test.local', false, '{}');
 
 insert into public.subjects (id, name) values
-    ('aaaaaaaa-0000-0000-0000-000000000001', 'Data Structures');
+    ('aaaaaaaa-0000-0000-0000-000000000001', 'RLS test subject');
 insert into public.experiments (id, subject_id, position, title) values
     ('aaaaaaaa-0000-0000-0000-000000000002', 'aaaaaaaa-0000-0000-0000-000000000001', 1, 'Stacks');
 
