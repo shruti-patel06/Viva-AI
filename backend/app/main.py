@@ -1,13 +1,24 @@
 """The VivaAI API. Run from backend/: uvicorn app.main:app --reload"""
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
+from app.core.db import close_pool
 from app.modules.auth.router import router as auth_router
 from app.modules.ingestion.router import router as ingestion_router
 
-app = FastAPI(title="VivaAI")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    yield
+    close_pool()
+
+
+app = FastAPI(title="VivaAI", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

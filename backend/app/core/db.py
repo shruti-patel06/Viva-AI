@@ -30,6 +30,13 @@ def get_pool() -> ConnectionPool:
     return _pool
 
 
+def close_pool() -> None:
+    global _pool
+    if _pool is not None:
+        _pool.close()
+        _pool = None
+
+
 @contextmanager
 def transaction() -> Iterator[Connection]:
     """One transaction: everything inside commits together, or nothing does."""
