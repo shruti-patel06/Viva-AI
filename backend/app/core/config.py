@@ -28,6 +28,18 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_embedding_model: str = "gemini-embedding-001"
 
+    # Language model for writing questions (and later scoring).
+    llm_provider: Literal["groq", "gemini"] = "groq"
+    groq_api_key: str = ""
+    groq_model: str = "openai/gpt-oss-120b"
+    gemini_model: str = "gemini-2.5-flash"
+
+    # Text to speech for question audio.
+    sarvam_api_key: str = ""
+    sarvam_tts_model: str = "bulbul:v3"
+    sarvam_speaker: str = ""  # empty = Sarvam's default voice for the model
+    audio_bucket: str = "question-audio"
+
     chroma_path: str = "./chroma"
 
     @property
