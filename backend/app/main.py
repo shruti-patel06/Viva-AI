@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import get_settings
 from app.modules.auth.router import router as auth_router
+from app.modules.ingestion.router import router as ingestion_router
 
 app = FastAPI(title="VivaAI")
 
@@ -17,6 +18,7 @@ app.add_middleware(
 
 
 app.include_router(auth_router)
+app.include_router(ingestion_router)
 
 
 @app.get("/health")
