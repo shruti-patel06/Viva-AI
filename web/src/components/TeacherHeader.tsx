@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabase";
 const LINKS = [
   { href: "/teacher", label: "Lab material" },
   { href: "/teacher/questions", label: "Question pool" },
+  { href: "/teacher/exams", label: "Exams" },
 ];
 
 export function TeacherHeader({ email }: { email: string | null }) {
