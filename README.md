@@ -69,6 +69,10 @@ python -m app.worker
 npm run dev
 ```
 
+Teachers sign in at `/login`. Under Exams, create an exam, open it once every question slot has an
+approved question, and give students the join code. Students open `/join` (no account needed), enter
+the code, their roll number and the experiment they performed, and take the viva at `/viva`.
+
 Search a processed manual by experiment (from backend/):
 
 ```
@@ -90,4 +94,4 @@ cd backend
 python -m pytest
 ```
 
-runs the queue and ingestion tests (needs `supabase start`).
+runs the queue, ingestion, question pool, exam and viva session tests (needs `supabase start`).
