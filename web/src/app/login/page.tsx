@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { currentRole, supabase } from "@/lib/supabase";
@@ -65,6 +66,12 @@ export default function LoginPage() {
         >
           {busy ? "Signing in…" : "Sign in"}
         </button>
+        <p className="text-center text-sm text-zinc-500">
+          Student?{" "}
+          <Link href="/join" className="underline">
+            Join your viva
+          </Link>
+        </p>
       </form>
     </main>
   );
