@@ -45,7 +45,7 @@ def upload_document(
 
     # File first, then rows. If the rows fail, an unused file is left behind, which is
     # harmless. The other order could queue a job for a file that was never stored.
-    storage.upload(storage_path, content, "application/pdf")
+    storage.upload(get_settings().storage_bucket, storage_path, content, "application/pdf")
 
     with transaction() as conn:
         conn.execute(

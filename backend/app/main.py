@@ -10,6 +10,7 @@ from app.core.config import get_settings
 from app.core.db import close_pool
 from app.modules.auth.router import router as auth_router
 from app.modules.ingestion.router import router as ingestion_router
+from app.modules.questions.router import router as questions_router
 
 
 @asynccontextmanager
@@ -30,6 +31,7 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(ingestion_router)
+app.include_router(questions_router)
 
 
 @app.get("/health")

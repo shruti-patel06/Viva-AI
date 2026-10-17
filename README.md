@@ -9,7 +9,7 @@ backend/
   app/
     core/        settings, database, login token check, file storage
     modules/     one folder per module: auth, exams, ingestion, questions, sessions, scoring, reports
-    ai/          provider interfaces (embeddings now; language model and speech later)
+    ai/          provider interfaces: embeddings, language model, speech; prompts/ holds versioned prompts
     jobs/        the jobs table queue
     worker/      worker loop that runs ingest and score jobs
   tests/
@@ -25,7 +25,8 @@ scripts/load_test/  60-student load test (stage 8)
 ## Setup
 
 Copy `.env.example` to `.env` and `web/.env.example` to `web/.env.local`, then fill in the keys
-(`supabase status` prints the local ones). Never commit either file.
+(`supabase status` prints the local ones). Question writing needs `GROQ_API_KEY` and question audio
+needs `SARVAM_API_KEY`. Never commit either file.
 
 Start the local database (needs Docker Desktop running):
 
@@ -61,7 +62,7 @@ Three processes, each in its own terminal:
 # 1. API (from backend/, venv active)
 uvicorn app.main:app --reload
 
-# 2. Worker: processes uploads in the background (from backend/, venv active)
+# 2. Worker: processes uploads, writes questions and makes question audio (from backend/, venv active)
 python -m app.worker
 
 # 3. Web app (from web/), then open http://localhost:3000

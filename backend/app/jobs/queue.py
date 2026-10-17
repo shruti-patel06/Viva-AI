@@ -22,6 +22,17 @@ class PermanentJobError(Exception):
     """Retrying will not help, such as a manual missing an experiment title. Fail at once."""
 
 
+class RetryLater(Exception):
+    """Nothing went wrong, but the job cannot run yet (an AI service is rate limiting us).
+
+    The job goes back in the queue for `delay` without using up one of its attempts.
+    """
+
+    def __init__(self, delay: timedelta, reason: str):
+        self.delay = delay
+        super().__init__(reason)
+
+
 @dataclass(frozen=True)
 class Job:
     id: int
@@ -85,6 +96,19 @@ def retry_later(conn: Connection, job: Job, error: str) -> None:
         where id = %s
         """,
         (delay, error, job.id),
+    )
+
+
+def postpone(conn: Connection, job: Job, delay: timedelta, reason: str) -> None:
+    """Back to the queue after `delay`, giving back the attempt this run used."""
+    conn.execute(
+        """
+        update public.jobs
+        set status = 'queued', run_after = now() + %s, attempts = attempts - 1,
+            last_error = %s, locked_at = null, updated_at = now()
+        where id = %s
+        """,
+        (delay, reason, job.id),
     )
 
 

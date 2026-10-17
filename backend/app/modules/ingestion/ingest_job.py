@@ -7,6 +7,7 @@ chunks, so a retry or a pick-up after a crash leaves exactly one copy.
 from typing import Any
 
 from app.core import storage
+from app.core.config import get_settings
 from app.core.db import transaction
 from app.jobs.queue import PermanentJobError
 from app.modules.ingestion import vector_store
@@ -39,7 +40,7 @@ def run(payload: dict[str, Any]) -> None:
     if not experiments:
         raise PermanentJobError("This subject has no experiments yet")
 
-    text = extract_text(storage.download(document["storage_path"]))
+    text = extract_text(storage.download(get_settings().storage_bucket, document["storage_path"]))
     try:
         sections = split_by_experiment(text, experiments)
     except ExperimentsNotFound as error:

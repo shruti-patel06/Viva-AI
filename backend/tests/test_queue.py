@@ -117,6 +117,18 @@ def test_failing_job_retries_with_growing_wait_then_gives_up():
     assert "timed out" in recorder.gave_up_with
 
 
+def test_rate_limited_job_waits_without_using_an_attempt():
+    job_id = add_job()
+    recorder = Recorder(error=queue.RetryLater(timedelta(seconds=20), "AI service busy"))
+
+    run_one({"test_job": recorder.handler()})
+
+    row = job_row(job_id)
+    assert row["status"] == "queued"
+    assert row["attempts"] == 0
+    assert run_one({"test_job": recorder.handler()}) is False  # waiting out the delay
+
+
 def test_permanent_error_fails_without_retrying():
     job_id = add_job()
     recorder = Recorder(error=PermanentJobError("experiment titles not found: Graph Traversal"))
