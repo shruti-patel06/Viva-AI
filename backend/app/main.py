@@ -9,8 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.core.db import close_pool
 from app.modules.auth.router import router as auth_router
+from app.modules.exams.router import router as exams_router
 from app.modules.ingestion.router import router as ingestion_router
 from app.modules.questions.router import router as questions_router
+from app.modules.sessions.router import router as sessions_router
 
 
 @asynccontextmanager
@@ -32,6 +34,8 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(ingestion_router)
 app.include_router(questions_router)
+app.include_router(exams_router)
+app.include_router(sessions_router)
 
 
 @app.get("/health")

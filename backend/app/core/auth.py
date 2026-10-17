@@ -52,3 +52,9 @@ def require_teacher(user: Annotated[CurrentUser, Depends(current_user)]) -> Curr
     if user.role != "teacher":
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Teachers only")
     return user
+
+
+def require_student(user: Annotated[CurrentUser, Depends(current_user)]) -> CurrentUser:
+    if user.role != "student":
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Students only")
+    return user
