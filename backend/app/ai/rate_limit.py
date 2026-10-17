@@ -15,6 +15,8 @@ import threading
 import time
 from collections.abc import Callable
 
+MIN_WAIT_SECONDS = 0.001
+
 
 class RateLimiter:
     def __init__(
@@ -52,7 +54,9 @@ class RateLimiter:
                     (1 - self._requests) / self.requests_per_minute * 60,
                     (tokens - self._tokens) / self.tokens_per_minute * 60,
                 )
-                if wait <= 0:
+                # Rounding can leave a bucket a hair short after a wait. Under a millisecond
+                # counts as ready, or the loop could sleep in steps too small to move the clock.
+                if wait < MIN_WAIT_SECONDS:
                     break
                 self._sleep(wait)
                 waited += wait
