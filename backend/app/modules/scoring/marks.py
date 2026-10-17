@@ -45,8 +45,9 @@ def _squash(text: str) -> str:
 def compare_output(answer: str, expected: str) -> Literal["match", "inside", "different"]:
     """Compare an answer with the one correct output, ignoring case, spacing and punctuation.
 
-    "inside" means the expected output appears within a longer answer ("the stack holds 3, 7"),
-    which a teacher should look at rather than the code guessing.
+    "inside" means the expected output appears within a longer answer ("the stack holds 3, 7",
+    or "3 and 7" for an output of numbers), which a teacher should look at rather than the
+    code guessing.
     """
     given, wanted = output_values(answer), output_values(expected)
     if not wanted:  # an output with no values at all, such as "[]": compare the characters
@@ -55,5 +56,8 @@ def compare_output(answer: str, expected: str) -> Literal["match", "inside", "di
         return "match"
     n = len(wanted)
     if any(given[i : i + n] == wanted for i in range(len(given) - n + 1)):
+        return "inside"
+    numbers = [value for value in given if not value.isalpha()]
+    if all(not value.isalpha() for value in wanted) and numbers == wanted:
         return "inside"
     return "different"

@@ -43,6 +43,8 @@ def test_order_and_values_still_matter():
 
 def test_the_right_output_inside_a_sentence_is_left_to_the_teacher():
     assert compare_output("the stack holds 3, 7 at the end", "3, 7") == "inside"
+    assert compare_output("the stack holds 3 and 7", "3, 7") == "inside"
+    assert compare_output("3 and 7 and 9", "3, 7") == "different"
 
 
 def test_an_output_with_no_values_compares_its_characters():
