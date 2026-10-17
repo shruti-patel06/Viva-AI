@@ -20,11 +20,13 @@ log = logging.getLogger("worker")
 def handlers() -> dict[str, Handler]:
     from app.modules.ingestion import ingest_job
     from app.modules.questions import audio_job, generate_job
+    from app.modules.scoring import score_job
 
     return {
         "ingest": ingest_job.handler,
         generate_job.JOB_TYPE: generate_job.handler,
         audio_job.JOB_TYPE: audio_job.handler,
+        score_job.JOB_TYPE: score_job.handler,
     }
 
 
