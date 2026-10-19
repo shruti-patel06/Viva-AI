@@ -82,6 +82,10 @@ Each submitted answer is scored by the worker a few seconds later, at the rate t
 allows, and the suggested marks appear on the Exams page. Answers saved before scoring existed can
 be queued with `python -m app.modules.scoring.requeue` (from backend/).
 
+After closing an exam, choose Review marks. Flagged answers come first; keep the AI's mark or give your
+own, with a note. Approve once every answer has a mark, then download the report as Excel or PDF. The
+AI's mark and the teacher's mark are both kept and both appear in the report.
+
 Search a processed manual by experiment (from backend/):
 
 ```
