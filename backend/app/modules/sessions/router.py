@@ -12,17 +12,21 @@ Every change runs with the session row locked (SELECT ... FOR UPDATE), so two re
 the same session, such as a double-clicked submit, run one after the other, never mixed.
 """
 
+import logging
 import re
 from datetime import timedelta
 from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, status
 from psycopg import Connection
 from psycopg.errors import UniqueViolation
 from pydantic import BaseModel, Field, field_validator
 
+from app.ai import speech
+from app.core import storage
 from app.core.auth import CurrentUser, require_student
+from app.core.config import get_settings
 from app.core.db import transaction
 from app.jobs.queue import enqueue
 from app.modules.scoring.score_job import JOB_TYPE as SCORE_JOB
@@ -36,6 +40,11 @@ Student = Annotated[CurrentUser, Depends(require_student)]
 # the deadline is still accepted, to allow for the trip over a slow lab network.
 GRACE = timedelta(seconds=20)
 ROLL_NUMBER = re.compile(r"^[A-Z0-9/-]{1,20}$")
+# The page stops recording at 30 seconds, the most the speech service takes in one request;
+# that much compressed speech is well under this.
+MAX_RECORDING_BYTES = 2 * 1024 * 1024
+
+log = logging.getLogger("sessions")
 
 
 def _open_exam(conn: Connection, join_code: str, lock: bool = False) -> dict:
@@ -175,7 +184,7 @@ def _current_question(conn: Connection, session: dict, position: int) -> dict:
         raise HTTPException(status.HTTP_409_CONFLICT, f"Answer question {session['current_position']} first")
     return conn.execute(
         """
-        select sq.id, sq.hints_used, q.hints
+        select sq.id, sq.hints_used, sq.transcript, q.hints
         from public.session_questions sq
         join public.questions q on q.id = sq.question_id
         where sq.session_id = %s and sq.position = %s
@@ -324,11 +333,11 @@ def submit_answer(session_id: UUID, answer: AnswerSubmit, student: Student) -> d
         drawn = _current_question(conn, session, answer.position)
         answer_id = conn.execute(
             """
-            insert into public.answers (session_question_id, text, hints_used, idempotency_key)
-            values (%s, %s, %s, %s)
+            insert into public.answers (session_question_id, text, hints_used, idempotency_key, spoken_transcript)
+            values (%s, %s, %s, %s, %s)
             returning id
             """,
-            (drawn["id"], answer.text.strip(), drawn["hints_used"], answer.idempotency_key),
+            (drawn["id"], answer.text.strip(), drawn["hints_used"], answer.idempotency_key, drawn["transcript"]),
         ).fetchone()["id"]
         # Scoring happens later, in the worker. The job is saved in the same transaction as
         # the answer, so there is never an answer without its score job, or the other way round.
@@ -340,3 +349,67 @@ def submit_answer(session_id: UUID, answer: AnswerSubmit, student: Student) -> d
         if answer.position >= session["question_count"] or session["past_deadline"]:
             _complete(conn, session_id)
         return _view(conn, session_id)
+
+
+@router.get("/sessions/{session_id}/audio")
+def question_audio(session_id: UUID, student: Student) -> dict[str, str]:
+    """A short-lived link to the current question's stored audio. The audio was made when the
+    teacher approved the question, so playing it costs no call to the speech service."""
+    with transaction() as conn:
+        session = _lock_session(conn, session_id, student)
+        if session["state"] != "in_progress":
+            raise HTTPException(status.HTTP_409_CONFLICT, "No question is being asked")
+        row = conn.execute(
+            """
+            select q.audio_path from public.session_questions sq
+            join public.questions q on q.id = sq.question_id
+            where sq.session_id = %s and sq.position = %s
+            """,
+            (session_id, session["current_position"]),
+        ).fetchone()
+    if row is None or not row["audio_path"]:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "This question has no audio; read it on screen")
+    return {"url": storage.signed_url(get_settings().audio_bucket, row["audio_path"], expires_in_seconds=300)}
+
+
+@router.post("/sessions/{session_id}/transcribe")
+def transcribe_answer(
+    session_id: UUID,
+    student: Student,
+    position: Annotated[int, Form(ge=1)],
+    recording: Annotated[UploadFile, File()],
+) -> dict[str, str]:
+    """Turn one recording of the current question's answer into text, for the student to check
+    and correct before submitting. A long answer can be recorded in several parts.
+
+    This is the one AI call a student waits for, so a failure here never stops the viva: the
+    reply tells the page to offer typing, and nothing about the session changes.
+    """
+    audio = recording.file.read(MAX_RECORDING_BYTES + 1)
+    if len(audio) > MAX_RECORDING_BYTES:
+        raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, "The recording is too long")
+    if not audio:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "The recording is empty")
+    # Check the student may answer this question now, then let go of the row lock: the
+    # speech service can take seconds, and nothing else should wait on it.
+    with transaction() as conn:
+        _current_question(conn, _lock_session(conn, session_id, student), position)
+
+    try:
+        heard = speech.transcribe(audio, recording.content_type or "application/octet-stream")
+    except speech.SpeechUnavailable as error:
+        log.warning("speech to text failed for session %s: %s", session_id, error)
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            "Your recording could not be turned into text right now. Type your answer instead, or try recording again.",
+        )
+
+    if heard:
+        with transaction() as conn:
+            # Checked again: time may have run out while the speech service was working.
+            drawn = _current_question(conn, _lock_session(conn, session_id, student), position)
+            conn.execute(
+                "update public.session_questions set transcript = concat_ws(' ', transcript, %s::text) where id = %s",
+                (heard, drawn["id"]),
+            )
+    return {"transcript": heard}
