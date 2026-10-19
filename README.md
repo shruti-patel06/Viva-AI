@@ -73,6 +73,11 @@ Teachers sign in at `/login`. Under Exams, create an exam, open it once every qu
 approved question, and give students the join code. Students open `/join` (no account needed), enter
 the code, their roll number and the experiment they performed, and take the viva at `/viva`.
 
+Questions are read aloud from the audio made when they were approved. Students can speak an answer
+(in parts of up to 30 seconds), check the transcript, and correct it before submitting; typing always
+works too. Browsers allow the microphone only on `https` or `localhost`, so lab machines reaching a dev
+server by its network address (`http://192.168...`) get typing only until the app is served over https.
+
 Each submitted answer is scored by the worker a few seconds later, at the rate the AI service
 allows, and the suggested marks appear on the Exams page. Answers saved before scoring existed can
 be queued with `python -m app.modules.scoring.requeue` (from backend/).
