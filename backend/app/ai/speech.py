@@ -52,11 +52,14 @@ def transcribe(audio: bytes, content_type: str) -> str:
     settings = get_settings()
     if not settings.sarvam_api_key:
         raise SpeechUnavailable("Speech to text is not set up (SARVAM_API_KEY is empty)")
+    # Browsers label recordings like "audio/webm;codecs=opus". Sarvam accepts only the bare
+    # type ("audio/webm") and works out the codec itself.
+    media_type = content_type.split(";")[0].strip().lower() or "application/octet-stream"
     try:
         response = httpx.post(
             SARVAM_STT_URL,
             headers={"api-subscription-key": settings.sarvam_api_key},
-            files={"file": ("answer", audio, content_type)},
+            files={"file": ("answer", audio, media_type)},
             data={"model": settings.sarvam_stt_model, "language_code": "en-IN"},
             timeout=TRANSCRIBE_TIMEOUT_SECONDS,
         )
@@ -65,5 +68,5 @@ def transcribe(audio: bytes, content_type: str) -> str:
     if response.status_code == 429:
         raise SpeechUnavailable("The speech service is busy (too many requests)")
     if response.status_code >= 400:
-        raise SpeechUnavailable(f"The speech service refused the recording ({response.status_code}): {response.text[:200]}")
+        raise SpeechUnavailable(f"The speech service refused the recording ({response.status_code}): {response.text[:500]}")
     return (response.json().get("transcript") or "").strip()

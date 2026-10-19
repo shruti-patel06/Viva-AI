@@ -163,6 +163,19 @@ def test_transcribe_returns_sarvams_transcript(monkeypatch):
     assert speech.transcribe(b"audio", "audio/webm") == "a stack is lifo"
 
 
+def test_the_browsers_codec_label_is_dropped_before_sending(monkeypatch):
+    sent = {}
+
+    def post(url, headers, files, data, timeout):
+        sent["type"] = files["file"][2]
+        return sarvam_reply(200, {"transcript": "ok"})
+
+    monkeypatch.setattr(speech.httpx, "post", post)
+    speech.transcribe(b"audio", "audio/webm;codecs=opus")
+
+    assert sent["type"] == "audio/webm"  # Sarvam refuses "audio/webm;codecs=opus"
+
+
 @pytest.mark.parametrize(
     "outcome",
     [sarvam_reply(429), sarvam_reply(503), sarvam_reply(403), httpx.ConnectTimeout("slow"), httpx.ConnectError("down")],
