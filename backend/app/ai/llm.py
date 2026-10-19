@@ -8,17 +8,15 @@ so the same key can be shared by question writing and scoring without being refu
 """
 
 import json
-import logging
 import time
 from functools import lru_cache
 from typing import Any, Protocol
 
 import httpx
 
+from app.ai import calls
 from app.ai.rate_limit import RateLimiter
 from app.core.config import get_settings
-
-log = logging.getLogger("ai")
 
 
 class RateLimited(Exception):
@@ -61,35 +59,42 @@ class GroqModel:
         estimate = estimate_tokens(system, user, schema, max_tokens)
         waited = self._limiter.acquire(estimate)
         started = time.monotonic()
-        response = httpx.post(
-            self.URL,
-            headers={"Authorization": f"Bearer {self._api_key}"},
-            json={
-                "model": self.model_id,
-                "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-                # Strict mode: the reply is guaranteed to match the schema's shape.
-                "response_format": {
-                    "type": "json_schema",
-                    "json_schema": {"name": schema_name, "strict": True, "schema": schema},
+        try:
+            response = httpx.post(
+                self.URL,
+                headers={"Authorization": f"Bearer {self._api_key}"},
+                json={
+                    "model": self.model_id,
+                    "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
+                    # Strict mode: the reply is guaranteed to match the schema's shape.
+                    "response_format": {
+                        "type": "json_schema",
+                        "json_schema": {"name": schema_name, "strict": True, "schema": schema},
+                    },
+                    "reasoning_effort": "low",
+                    "max_completion_tokens": max_tokens,
                 },
-                "reasoning_effort": "low",
-                "max_completion_tokens": max_tokens,
-            },
-            timeout=120,
-        )
+                timeout=120,
+            )
+        except httpx.HTTPError as error:
+            calls.record("groq", self.model_id, schema_name, "error", time.monotonic() - started, waited,
+                         error=f"{type(error).__name__}: {error}")
+            raise
+        took = time.monotonic() - started
         remaining = response.headers.get("x-ratelimit-remaining-tokens")
         remaining = int(remaining) if remaining and remaining.isdigit() else None
         if response.status_code == 429:
             # Nothing was used, but the provider's minute is spent: make the next call wait.
             self._limiter.settle(estimate, 0, remaining=remaining or 0)
+            calls.record("groq", self.model_id, schema_name, "rate_limited", took, waited)
             raise RateLimited(float(response.headers.get("retry-after", 30)))
-        response.raise_for_status()
+        if response.is_error:
+            calls.record("groq", self.model_id, schema_name, "error", took, waited,
+                         error=f"HTTP {response.status_code}: {response.text[:200]}")
+            response.raise_for_status()
         used = response.json().get("usage", {}).get("total_tokens", estimate)
         self._limiter.settle(estimate, used, remaining)
-        log.info(
-            "groq %s: %s tokens in %.1fs, waited %.1fs for the rate limit",
-            schema_name, used, time.monotonic() - started, waited,
-        )
+        calls.record("groq", self.model_id, schema_name, "ok", took, waited, tokens=used)
         return json.loads(response.json()["choices"][0]["message"]["content"])
 
 
@@ -122,16 +127,20 @@ class GeminiModel:
                 ),
             )
         except errors.ClientError as error:
+            took = time.monotonic() - started
             if error.code == 429:
                 self._limiter.settle(estimate, 0, remaining=0)
+                calls.record("gemini", self.model_id, schema_name, "rate_limited", took, waited)
                 raise RateLimited(30)
+            calls.record("gemini", self.model_id, schema_name, "error", took, waited, error=str(error))
+            raise
+        except Exception as error:
+            calls.record("gemini", self.model_id, schema_name, "error", time.monotonic() - started, waited,
+                         error=f"{type(error).__name__}: {error}")
             raise
         used = getattr(response.usage_metadata, "total_token_count", None) or estimate
         self._limiter.settle(estimate, used)
-        log.info(
-            "gemini %s: %s tokens in %.1fs, waited %.1fs for the rate limit",
-            schema_name, used, time.monotonic() - started, waited,
-        )
+        calls.record("gemini", self.model_id, schema_name, "ok", time.monotonic() - started, waited, tokens=used)
         return json.loads(response.text)
 
 
