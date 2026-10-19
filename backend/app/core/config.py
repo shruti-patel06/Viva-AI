@@ -42,6 +42,8 @@ class Settings(BaseSettings):
     sarvam_api_key: str = ""
     sarvam_tts_model: str = "bulbul:v3"
     sarvam_speaker: str = ""  # empty = Sarvam's default voice for the model
+    # Speech to text for spoken answers. Sarvam's live endpoint takes up to 30 seconds a request.
+    sarvam_stt_model: str = "saaras:v4"
     audio_bucket: str = "question-audio"
 
     chroma_path: str = "./chroma"
