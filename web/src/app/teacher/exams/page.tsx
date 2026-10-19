@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { TeacherHeader } from "@/components/TeacherHeader";
 import { apiFetch, errorMessage } from "@/lib/api";
@@ -329,6 +330,11 @@ function ExamCard({
           >
             Close exam
           </button>
+        )}
+        {(exam.state === "closed" || exam.state === "approved") && (
+          <Link href={`/teacher/review?exam=${exam.id}`} className="rounded-md bg-zinc-900 px-3 py-1 text-white">
+            {exam.state === "closed" ? "Review marks" : "View report"}
+          </Link>
         )}
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
