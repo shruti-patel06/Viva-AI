@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch, errorMessage } from "@/lib/api";
+import { canRecord, Recorder } from "@/components/Recorder";
 import { newKey } from "@/lib/keys";
 import { currentRole, supabase } from "@/lib/supabase";
 
@@ -235,6 +236,9 @@ function QuestionCard({
   const [idempotencyKey] = useState(newKey);
   const [now, setNow] = useState(() => Date.now());
   const sentAtZero = useRef(false);
+  // Voice is offered for spoken slots when the browser can record; typing always works.
+  const [voice] = useState(() => question.answer_mode !== "typed" && canRecord());
+  const [spoken, setSpoken] = useState(false);
 
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -274,7 +278,10 @@ function QuestionCard({
         </span>
       </div>
 
-      <p className="text-lg font-medium">{question.text}</p>
+      <div className="flex items-start gap-3">
+        <p className="flex-1 text-lg font-medium">{question.text}</p>
+        <QuestionAudio sessionId={sessionId} position={question.position} />
+      </div>
 
       {question.hints.length > 0 && (
         <ol className="list-decimal space-y-1 rounded-lg bg-amber-50 py-2 pl-8 pr-3 text-sm text-amber-900">
@@ -291,6 +298,27 @@ function QuestionCard({
         }}
         className="space-y-3"
       >
+        {voice && (
+          <Recorder
+            sessionId={sessionId}
+            position={question.position}
+            disabled={busy}
+            onHeard={(heard) => {
+              const joined = text.trim() ? `${text.trim()} ${heard}` : heard;
+              setText(joined);
+              writeDraft(draftKey, joined);
+              setSpoken(true);
+            }}
+          />
+        )}
+        {spoken && (
+          <p className="text-sm text-zinc-600">
+            Check what was heard and correct any mistakes before you submit. You can speak again to add more.
+          </p>
+        )}
+        {question.answer_mode !== "typed" && !voice && (
+          <p className="text-xs text-zinc-500">Voice answers are not available in this browser, so type your answer.</p>
+        )}
         <textarea
           autoFocus
           rows={5}
@@ -308,7 +336,7 @@ function QuestionCard({
             disabled={busy || !text.trim()}
             className="rounded-md bg-zinc-900 px-4 py-2 text-white disabled:opacity-50"
           >
-            {busy ? "Saving…" : last ? "Submit and finish" : "Submit answer"}
+            {busy ? "Saving…" : `${spoken ? "Confirm" : "Submit"} ${last ? "and finish" : "answer"}`}
           </button>
           {question.hints_left > 0 && (
             <button
@@ -337,5 +365,47 @@ function QuestionCard({
         </div>
       </form>
     </div>
+  );
+}
+
+// Plays the question's stored audio when it appears, with a button to hear it again. The
+// question is always on screen too, so missing audio or a blocked autoplay costs nothing.
+function QuestionAudio({ sessionId, position }: { sessionId: string; position: number }) {
+  const player = useRef<HTMLAudioElement | null>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    apiFetch(`/sessions/${sessionId}/audio`)
+      .then((response) => (response.ok ? response.json() : null))
+      .then((body) => {
+        if (!active || !body) return;
+        player.current = new Audio(body.url);
+        setReady(true);
+        player.current.play().catch(() => {}); // a browser may block autoplay; the button still works
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+      player.current?.pause();
+      player.current = null;
+    };
+  }, [sessionId, position]);
+
+  if (!ready) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        const audio = player.current;
+        if (!audio) return;
+        audio.currentTime = 0;
+        void audio.play();
+      }}
+      className="shrink-0 rounded-md border border-zinc-300 px-3 py-1 text-sm"
+      aria-label="Play the question again"
+    >
+      ▶ Listen
+    </button>
   );
 }
