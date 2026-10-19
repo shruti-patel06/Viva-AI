@@ -15,6 +15,7 @@ type Question = {
   answer_mode: string | null;
   hints: string[];
   hints_left: number;
+  own_code: string | null;
 };
 type View = {
   id: string;
@@ -28,7 +29,10 @@ type View = {
   duration_minutes: number;
   marks_per_question: number;
   hint_penalty: number;
+  needs_code: boolean;
+  code_saved: boolean;
   question: Question | null;
+  preparing: boolean;
 };
 
 // The page keeps nothing that matters: the server says where the student is, so a refresh
@@ -108,6 +112,17 @@ export default function VivaPage() {
     [view, show, fetchView],
   );
 
+  // A question about the student's program is written in the background; check until it is ready.
+  const preparing = view?.state === "in_progress" && view.preparing;
+  const viewId = view?.id;
+  useEffect(() => {
+    if (!preparing || !viewId) return;
+    const timer = setInterval(() => {
+      fetchView(viewId).then(show).catch(() => {});
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [preparing, viewId, fetchView, show]);
+
   if (missing) {
     return (
       <Shell>
@@ -151,14 +166,22 @@ export default function VivaPage() {
             </li>
             <li>If the page reloads or the connection drops, open it again: you continue where you were.</li>
           </ul>
+          {view.needs_code && <CodePaste saved={view.code_saved} busy={busy} send={send} />}
           <button
-            disabled={busy}
+            disabled={busy || (view.needs_code && !view.code_saved)}
             onClick={() => send("/start")}
             className="rounded-md bg-zinc-900 px-4 py-2 text-white disabled:opacity-50"
           >
             Start viva
           </button>
         </div>
+      )}
+
+      {view.state === "in_progress" && view.preparing && (
+        <p className="text-sm text-zinc-600">
+          Preparing a question about your program… This takes a few seconds; your time keeps running, so read your
+          code meanwhile.
+        </p>
       )}
 
       {view.state === "in_progress" && view.question && (
@@ -282,6 +305,13 @@ function QuestionCard({
         <p className="flex-1 text-lg font-medium">{question.text}</p>
         <QuestionAudio sessionId={sessionId} position={question.position} />
       </div>
+
+      {question.own_code && (
+        <details open className="rounded-lg border border-zinc-200 bg-zinc-50 text-sm">
+          <summary className="cursor-pointer px-3 py-2 text-zinc-600">Your program</summary>
+          <pre className="max-h-72 overflow-auto px-3 pb-3 font-mono text-xs">{question.own_code}</pre>
+        </details>
+      )}
 
       {question.hints.length > 0 && (
         <ol className="list-decimal space-y-1 rounded-lg bg-amber-50 py-2 pl-8 pr-3 text-sm text-amber-900">
@@ -407,5 +437,45 @@ function QuestionAudio({ sessionId, position }: { sessionId: string; position: n
     >
       ▶ Listen
     </button>
+  );
+}
+
+// The program the student wrote in the lab, pasted once before the viva starts. One question
+// is written about it while they answer the others. It is read, never run.
+function CodePaste({
+  saved,
+  busy,
+  send,
+}: {
+  saved: boolean;
+  busy: boolean;
+  send: (path: string, body?: object) => Promise<boolean>;
+}) {
+  const [code, setCode] = useState("");
+
+  if (saved) {
+    return <p className="text-sm text-emerald-700">Your program is saved. One question will be about it.</p>;
+  }
+  return (
+    <div className="space-y-2">
+      <label className="block text-sm">
+        Paste the program you wrote for this experiment. One question will be about it.
+        <textarea
+          rows={10}
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          spellCheck={false}
+          className="mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 font-mono text-xs"
+        />
+      </label>
+      <button
+        disabled={busy || !code.trim()}
+        onClick={() => send("/code", { code })}
+        className="rounded-md border border-zinc-300 px-3 py-1.5 text-sm disabled:opacity-50"
+      >
+        Save program
+      </button>
+      <p className="text-xs text-zinc-500">You can save it once, so check it is the whole program.</p>
+    </div>
   );
 }

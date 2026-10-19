@@ -45,6 +45,8 @@ class AnswerRow:
     teacher_note: str | None
     reviewed_at: datetime | None
     reviewed_by: str | None
+    # Written during the viva from the student's own program, without the teacher's approval.
+    live: bool = False
 
     @property
     def final(self) -> Decimal | None:
@@ -119,7 +121,7 @@ def load_sheet(conn: Connection, exam_id: UUID, teacher_id: UUID) -> Sheet | Non
     rows = conn.execute(
         """
         select s.id as session_id, s.roll_number, x.title as experiment,
-               sq.position, q.type, q.question_text, q.reference_answer, q.key_points,
+               sq.position, q.type, q.question_text, q.reference_answer, q.key_points, q.status as question_status,
                a.id as answer_id, a.text, a.spoken_transcript, a.hints_used,
                sc.id as score_id, sc.ai_score, sc.confidence, sc.reason, sc.key_points_hit, sc.needs_review,
                sc.review_reason, sc.prompt_version, sc.model, sc.teacher_score, sc.teacher_note,
@@ -152,7 +154,7 @@ def load_sheet(conn: Connection, exam_id: UUID, teacher_id: UUID) -> Sheet | Non
                 key_points_hit=r["key_points_hit"], needs_review=bool(r["needs_review"]),
                 review_reason=r["review_reason"], prompt_version=r["prompt_version"], model=r["model"],
                 scored=r["score_id"] is not None, teacher_score=r["teacher_score"], teacher_note=r["teacher_note"],
-                reviewed_at=r["reviewed_at"], reviewed_by=r["reviewed_by"],
+                reviewed_at=r["reviewed_at"], reviewed_by=r["reviewed_by"], live=r["question_status"] == "live",
             )
         )
     config = exam["config"]
@@ -189,7 +191,7 @@ def sheet_to_dict(sheet: Sheet) -> dict[str, Any]:
                         "prompt_version": a.prompt_version, "model": a.model,
                         "teacher_score": _number(a.teacher_score), "teacher_note": a.teacher_note,
                         "reviewed_at": a.reviewed_at, "reviewed_by": a.reviewed_by,
-                        "final": _number(a.final), "status": a.status,
+                        "final": _number(a.final), "status": a.status, "live": a.live,
                     }
                     for a in s.answers
                 ],

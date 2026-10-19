@@ -87,6 +87,14 @@ def subject():
             """,
             (TEACHER_ID,),
         )
+        conn.execute(
+            """
+            delete from public.jobs where type = 'own_code_question' and payload->>'session_id' in (
+                select s.id::text from public.sessions s join public.exams e on e.id = s.exam_id where e.teacher_id = %s
+            )
+            """,
+            (TEACHER_ID,),
+        )
         # Exams next: their sessions point at the questions and the student logins.
         conn.execute("delete from public.exams where teacher_id = %s", (TEACHER_ID,))
         conn.execute("delete from auth.users where id = any(%s::uuid[])", (STUDENTS,))
@@ -198,3 +206,13 @@ def exam(subject, pool) -> dict:
             (TEACHER_ID, subject["id"], new_join_code(), Jsonb(config)),
         ).fetchone()
     return {"id": str(row["id"]), "join_code": row["join_code"], "experiment_id": pool["experiment_id"]}
+
+
+@pytest.fixture(autouse=True)
+def ai_calls(monkeypatch) -> list[tuple]:
+    """Every test's AI call records, kept in memory instead of the local ai_calls table."""
+    from app.ai import calls
+
+    saved: list[tuple] = []
+    monkeypatch.setattr(calls, "_save", lambda *row: saved.append(row))
+    return saved

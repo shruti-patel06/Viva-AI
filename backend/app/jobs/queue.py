@@ -41,20 +41,21 @@ class Job:
     attempts: int
 
 
-def enqueue(conn: Connection, job_type: str, payload: dict[str, Any]) -> int:
+def enqueue(conn: Connection, job_type: str, payload: dict[str, Any], priority: int = 0) -> int:
     """Add a job using the caller's connection, so it commits in the caller's transaction.
 
     That is the point: the document row and its ingest job are saved together or not at all.
+    Higher priority runs first: work a student is waiting for goes ahead of scoring.
     """
     row = conn.execute(
-        "insert into public.jobs (type, payload) values (%s, %s) returning id",
-        (job_type, Jsonb(payload)),
+        "insert into public.jobs (type, payload, priority) values (%s, %s, %s) returning id",
+        (job_type, Jsonb(payload), priority),
     ).fetchone()
     return row["id"]
 
 
 def claim_next(conn: Connection, job_types: Sequence[str]) -> Job | None:
-    """Take the oldest job that is due, or None if there is nothing to do.
+    """Take the most urgent job that is due (highest priority, then oldest), or None.
 
     FOR UPDATE locks the chosen row; SKIP LOCKED makes another worker running the same
     query skip that row instead of waiting for it. So two workers never get the same job,
@@ -67,7 +68,7 @@ def claim_next(conn: Connection, job_types: Sequence[str]) -> Job | None:
         where id = (
             select id from public.jobs
             where status = 'queued' and run_after <= now() and type = any(%s)
-            order by run_after, id
+            order by priority desc, run_after, id
             for update skip locked
             limit 1
         )

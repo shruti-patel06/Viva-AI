@@ -29,7 +29,9 @@ def test_creating_an_exam_gives_a_join_code_and_copies_the_mix(login, subject, p
     assert len(exam["join_code"]) == 6 and set(exam["join_code"]) <= set(CODE_ALPHABET)
     row = exam_row(exam["id"])
     assert row["state"] == "draft"
-    assert row["config"]["slots"] == pool["slots"]  # the live own-code slot is left out
+    # The whole mix, in order: the pool slots, and the own-code slot written live.
+    assert [s["type"] for s in row["config"]["slots"]] == [s["type"] for s in pool["slots"]] + ["own_code"]
+    assert row["config"]["slots"][-1]["live"] is True
     assert row["config"]["duration_minutes"] == 15
     assert row["config"]["hint_penalty"] == 0.25
 

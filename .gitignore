@@ -34,6 +34,7 @@ chroma/
 *.webm
 *.ogg
 *.m4a
+study*.csv
 
 # Editors and OS
 .vscode/

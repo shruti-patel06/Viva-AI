@@ -87,7 +87,7 @@ def to_xlsx(report: Sheet) -> bytes:
     for student in report.students:
         for a in student.answers:
             _row(answers, [
-                student.roll_number, a.position, a.type, a.question, (a.text or "(skipped)") if a.answer_id else "(not reached)",
+                student.roll_number, a.position, a.type + (" (generated live)" if a.live else ""), a.question, (a.text or "(skipped)") if a.answer_id else "(not reached)",
                 a.heard or "", a.hints_used, _num(a.ai_score), a.ai_reason or "", _verdicts(a), a.review_reason or "",
                 _num(a.teacher_score), a.teacher_note or "", _num(a.final), a.reviewed_by or "", _when(a.reviewed_at),
                 a.prompt_version or "", a.model or "",
@@ -167,7 +167,8 @@ def to_pdf(report: Sheet) -> bytes:
         _line(pdf, f"{student.roll_number} - {student.experiment}", size=13, bold=True)
         _line(pdf, f"Total: {_mark(student.total)} out of {_mark(report.max_marks)}", gap=4)
         for a in student.answers:
-            _line(pdf, f"Q{a.position} ({a.type.replace('_', ' ')}): {a.question}", bold=True)
+            label = a.type.replace("_", " ") + (", generated live" if a.live else "")
+            _line(pdf, f"Q{a.position} ({label}): {a.question}", bold=True)
             given = "(not reached)" if a.answer_id is None else (a.text or "(skipped)")
             _line(pdf, f"Answer: {given}")
             if a.heard and a.heard != a.text:

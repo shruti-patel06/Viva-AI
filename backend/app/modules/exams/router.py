@@ -12,7 +12,6 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.core.auth import CurrentUser, require_teacher
 from app.core.db import transaction
-from app.modules.questions.generation import pool_slots
 from app.modules.sessions.draw import missing_slots
 
 router = APIRouter(tags=["exams"])
@@ -65,8 +64,10 @@ def create_exam(new: NewExam, teacher: Teacher) -> dict[str, str]:
         config = {
             "experiment_ids": [str(e) for e in experiment_ids],
             # A copy of the subject's mix, not a reference to it: if the subject's rules
-            # change later, every student in this exam still gets the same mix.
-            "slots": pool_slots(subject["question_type_mix"]),
+            # change later, every student in this exam still gets the same mix. Live slots
+            # (questions about the student's own program) are kept; they are written during
+            # the viva instead of drawn from the pool.
+            "slots": sorted(subject["question_type_mix"], key=lambda slot: slot["position"]),
             "duration_minutes": new.duration_minutes,
             "marks_per_question": new.marks_per_question,
             "hint_penalty": new.hint_penalty,

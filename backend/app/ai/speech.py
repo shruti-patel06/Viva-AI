@@ -5,9 +5,11 @@ different voice provider means changing this file only.
 """
 
 import base64
+import time
 
 import httpx
 
+from app.ai import calls
 from app.ai.llm import RateLimited
 from app.core.config import get_settings
 
@@ -35,15 +37,26 @@ def synthesize(text: str) -> bytes:
     }
     if settings.sarvam_speaker:
         body["speaker"] = settings.sarvam_speaker
-    response = httpx.post(
-        SARVAM_TTS_URL,
-        headers={"api-subscription-key": settings.sarvam_api_key},
-        json=body,
-        timeout=60,
-    )
+    model = settings.sarvam_tts_model
+    started = time.monotonic()
+    try:
+        response = httpx.post(
+            SARVAM_TTS_URL,
+            headers={"api-subscription-key": settings.sarvam_api_key},
+            json=body,
+            timeout=60,
+        )
+    except httpx.HTTPError as error:
+        calls.record("sarvam", model, "tts", "error", time.monotonic() - started, error=type(error).__name__)
+        raise
+    took = time.monotonic() - started
     if response.status_code == 429:
+        calls.record("sarvam", model, "tts", "rate_limited", took)
         raise RateLimited(float(response.headers.get("retry-after", 30)))
-    response.raise_for_status()
+    if response.is_error:
+        calls.record("sarvam", model, "tts", "error", took, error=f"HTTP {response.status_code}")
+        response.raise_for_status()
+    calls.record("sarvam", model, "tts", "ok", took)
     return base64.b64decode(response.json()["audios"][0])
 
 
@@ -55,6 +68,8 @@ def transcribe(audio: bytes, content_type: str) -> str:
     # Browsers label recordings like "audio/webm;codecs=opus". Sarvam accepts only the bare
     # type ("audio/webm") and works out the codec itself.
     media_type = content_type.split(";")[0].strip().lower() or "application/octet-stream"
+    model = settings.sarvam_stt_model
+    started = time.monotonic()
     try:
         response = httpx.post(
             SARVAM_STT_URL,
@@ -64,9 +79,14 @@ def transcribe(audio: bytes, content_type: str) -> str:
             timeout=TRANSCRIBE_TIMEOUT_SECONDS,
         )
     except httpx.HTTPError as error:
+        calls.record("sarvam", model, "stt", "error", time.monotonic() - started, error=type(error).__name__)
         raise SpeechUnavailable(f"Could not reach the speech service: {type(error).__name__}")
+    took = time.monotonic() - started
     if response.status_code == 429:
+        calls.record("sarvam", model, "stt", "rate_limited", took)
         raise SpeechUnavailable("The speech service is busy (too many requests)")
     if response.status_code >= 400:
+        calls.record("sarvam", model, "stt", "error", took, error=f"HTTP {response.status_code}: {response.text[:200]}")
         raise SpeechUnavailable(f"The speech service refused the recording ({response.status_code}): {response.text[:500]}")
+    calls.record("sarvam", model, "stt", "ok", took)
     return (response.json().get("transcript") or "").strip()

@@ -30,6 +30,7 @@ from app.core.config import get_settings
 from app.core.db import transaction
 from app.jobs.queue import enqueue
 from app.modules.scoring.score_job import JOB_TYPE as SCORE_JOB
+from app.modules.sessions import own_code
 from app.modules.sessions.draw import PoolIncomplete, draw_questions
 
 router = APIRouter(tags=["sessions"])
@@ -148,7 +149,7 @@ def _lock_session(conn: Connection, session_id: UUID, student: CurrentUser) -> d
     session = conn.execute(
         """
         select s.id, s.state, s.current_position, e.config,
-               (select count(*) from public.session_questions where session_id = s.id) as question_count,
+               jsonb_array_length(e.config->'slots') as question_count,
                s.state = 'in_progress' and s.ends_at < now() as past_deadline,
                s.state = 'in_progress' and s.ends_at + %s < now() as time_up
         from public.sessions s
@@ -182,7 +183,7 @@ def _current_question(conn: Connection, session: dict, position: int) -> dict:
         raise HTTPException(status.HTTP_409_CONFLICT, f"Question {position} has already been answered")
     if position > session["current_position"]:
         raise HTTPException(status.HTTP_409_CONFLICT, f"Answer question {session['current_position']} first")
-    return conn.execute(
+    drawn = conn.execute(
         """
         select sq.id, sq.hints_used, sq.transcript, q.hints
         from public.session_questions sq
@@ -191,6 +192,9 @@ def _current_question(conn: Connection, session: dict, position: int) -> dict:
         """,
         (session["id"], position),
     ).fetchone()
+    if drawn is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This question is still being prepared")
+    return drawn
 
 
 def _view(conn: Connection, session_id: UUID) -> dict[str, Any]:
@@ -201,14 +205,15 @@ def _view(conn: Connection, session_id: UUID) -> dict[str, Any]:
         select s.id, s.state, s.roll_number, s.current_position,
                case when s.ends_at is null then null
                     else greatest(0, ceil(extract(epoch from s.ends_at - now())))::int end as seconds_left,
-               e.title as exam_title, e.config, x.title as experiment,
-               (select count(*) from public.session_questions where session_id = s.id) as question_count,
+               e.title as exam_title, e.config, x.title as experiment, cs.code,
+               jsonb_array_length(e.config->'slots') as question_count,
                (select count(*) from public.answers a
                 join public.session_questions sq on sq.id = a.session_question_id
                 where sq.session_id = s.id) as answered
         from public.sessions s
         join public.exams e on e.id = s.exam_id
         join public.experiments x on x.id = s.experiment_id
+        left join public.code_submissions cs on cs.session_id = s.id
         where s.id = %s
         """,
         (session_id,),
@@ -226,18 +231,25 @@ def _view(conn: Connection, session_id: UUID) -> dict[str, Any]:
         "duration_minutes": config["duration_minutes"],
         "marks_per_question": config["marks_per_question"],
         "hint_penalty": config["hint_penalty"],
+        # The exam asks about the student's own program, which must be pasted before starting.
+        "needs_code": bool(own_code.live_slots(config)),
+        "code_saved": s["code"] is not None,
         "question": None,
+        "preparing": False,
     }
     if s["state"] == "in_progress":
         q = conn.execute(
             """
-            select sq.position, sq.hints_used, q.question_text, q.type, q.hints
+            select sq.position, sq.hints_used, q.question_text, q.type, q.hints, q.status
             from public.session_questions sq
             join public.questions q on q.id = sq.question_id
             where sq.session_id = %s and sq.position = %s
             """,
             (session_id, s["current_position"]),
         ).fetchone()
+        if q is None:  # a question about their program, still being written
+            view["preparing"] = True
+            return view
         view["question"] = {
             "position": q["position"],
             "text": q["question_text"],
@@ -245,6 +257,8 @@ def _view(conn: Connection, session_id: UUID) -> dict[str, Any]:
             "answer_mode": config["slots"][q["position"] - 1].get("answer_mode"),
             "hints": q["hints"][: q["hints_used"]],
             "hints_left": len(q["hints"]) - q["hints_used"],
+            # A question about their program is shown beside the program it asks about.
+            "own_code": s["code"] if q["status"] == "live" else None,
         }
     return view
 
@@ -254,7 +268,9 @@ def get_session(session_id: UUID, student: Student) -> dict[str, Any]:
     """Where the student is. The page loads this on every visit, which is what makes a
     refresh resume the viva instead of restarting it."""
     with transaction() as conn:
-        _lock_session(conn, session_id, student)
+        session = _lock_session(conn, session_id, student)
+        if session["state"] == "in_progress":
+            own_code.fill_after_waiting(conn, session_id, session["config"], session["current_position"])
         return _view(conn, session_id)
 
 
@@ -264,6 +280,10 @@ def start(session_id: UUID, student: Student) -> dict[str, Any]:
     with transaction() as conn:
         session = _lock_session(conn, session_id, student)
         if session["state"] == "joined":
+            if own_code.live_slots(session["config"]) and not conn.execute(
+                "select 1 from public.code_submissions where session_id = %s", (session_id,)
+            ).fetchone():
+                raise HTTPException(status.HTTP_409_CONFLICT, "Paste your program before you start")
             conn.execute(
                 """
                 update public.sessions
@@ -413,3 +433,33 @@ def transcribe_answer(
                 (heard, drawn["id"]),
             )
     return {"transcript": heard}
+
+
+class OwnCode(BaseModel):
+    code: str = Field(min_length=1, max_length=own_code.MAX_CODE_CHARS)
+
+
+@router.post("/sessions/{session_id}/code")
+def save_code(session_id: UUID, submission: OwnCode, student: Student) -> dict[str, Any]:
+    """Save the student's program, once, before they start, and queue the question about it.
+
+    The program is kept as text. It is read by the model as data and is never run.
+    """
+    if not submission.code.strip():
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "Paste your program")
+    with transaction() as conn:
+        session = _lock_session(conn, session_id, student)
+        if not own_code.live_slots(session["config"]):
+            raise HTTPException(status.HTTP_409_CONFLICT, "This exam has no question about your program")
+        if session["state"] != "joined":
+            raise HTTPException(status.HTTP_409_CONFLICT, "Your program is pasted before the viva starts")
+        try:
+            with conn.transaction():
+                conn.execute(
+                    "insert into public.code_submissions (session_id, code) values (%s, %s)",
+                    (session_id, submission.code),
+                )
+        except UniqueViolation:
+            raise HTTPException(status.HTTP_409_CONFLICT, "Your program has already been saved")
+        enqueue(conn, own_code.JOB_TYPE, {"session_id": str(session_id)}, priority=own_code.PRIORITY)
+        return _view(conn, session_id)

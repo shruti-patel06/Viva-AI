@@ -86,6 +86,38 @@ After closing an exam, choose Review marks. Flagged answers come first; keep the
 own, with a note. Approve once every answer has a mark, then download the report as Excel or PDF. The
 AI's mark and the teacher's mark are both kept and both appear in the report.
 
+When the subject's mix has an own-code slot (Data Structures does), students paste the program they
+wrote before starting. The worker writes one question about it while they answer the others; if it is
+not ready 45 seconds after they reach it, a ready-made question about their program is used. The
+program is read, never run. These questions skip approval, so the review page lists them as
+"generated live".
+
+## Checking the system
+
+Every AI call is recorded (time, tokens, outcome). From backend/:
+
+```
+python -m app.ai.calls --hours 24
+```
+
+The load test plays 60 students through a typed viva at once against the running API, with double
+clicks and resends, then checks nothing was lost or saved twice. It builds and removes its own exam
+and makes no AI calls:
+
+```
+python ../scripts/load_test/run.py
+```
+
+The scoring study checks the AI marks like a teacher. Export a blind sample, mark it without looking
+at the AI's scores, then compare (target: within 1 mark on at least 80% of answers):
+
+```
+python -m app.modules.reports.study export <exam id> --count 30 --out study.csv
+python -m app.modules.reports.study compare study.csv
+```
+
+`study.csv` holds student answers: it is git-ignored, and should be deleted once the result is noted.
+
 Search a processed manual by experiment (from backend/):
 
 ```
