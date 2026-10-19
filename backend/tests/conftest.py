@@ -198,3 +198,13 @@ def exam(subject, pool) -> dict:
             (TEACHER_ID, subject["id"], new_join_code(), Jsonb(config)),
         ).fetchone()
     return {"id": str(row["id"]), "join_code": row["join_code"], "experiment_id": pool["experiment_id"]}
+
+
+@pytest.fixture(autouse=True)
+def ai_calls(monkeypatch) -> list[tuple]:
+    """Every test's AI call records, kept in memory instead of the local ai_calls table."""
+    from app.ai import calls
+
+    saved: list[tuple] = []
+    monkeypatch.setattr(calls, "_save", lambda *row: saved.append(row))
+    return saved
