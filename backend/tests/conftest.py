@@ -87,6 +87,14 @@ def subject():
             """,
             (TEACHER_ID,),
         )
+        conn.execute(
+            """
+            delete from public.jobs where type = 'own_code_question' and payload->>'session_id' in (
+                select s.id::text from public.sessions s join public.exams e on e.id = s.exam_id where e.teacher_id = %s
+            )
+            """,
+            (TEACHER_ID,),
+        )
         # Exams next: their sessions point at the questions and the student logins.
         conn.execute("delete from public.exams where teacher_id = %s", (TEACHER_ID,))
         conn.execute("delete from auth.users where id = any(%s::uuid[])", (STUDENTS,))
