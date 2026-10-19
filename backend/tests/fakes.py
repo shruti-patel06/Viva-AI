@@ -32,7 +32,9 @@ class FakeLanguageModel:
         self.error = error
         self.calls: list[tuple[str, str]] = []
 
-    def generate_json(self, system: str, user: str, schema: dict[str, Any], schema_name: str) -> dict[str, Any]:
+    def generate_json(
+        self, system: str, user: str, schema: dict[str, Any], schema_name: str, max_tokens: int = 4500
+    ) -> dict[str, Any]:
         self.calls.append((system, user))
         if self.error:
             raise self.error

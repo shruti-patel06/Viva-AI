@@ -62,7 +62,7 @@ Three processes, each in its own terminal:
 # 1. API (from backend/, venv active)
 uvicorn app.main:app --reload
 
-# 2. Worker: processes uploads, writes questions and makes question audio (from backend/, venv active)
+# 2. Worker: processes uploads, writes questions, makes question audio and scores answers (from backend/, venv active)
 python -m app.worker
 
 # 3. Web app (from web/), then open http://localhost:3000
@@ -72,6 +72,10 @@ npm run dev
 Teachers sign in at `/login`. Under Exams, create an exam, open it once every question slot has an
 approved question, and give students the join code. Students open `/join` (no account needed), enter
 the code, their roll number and the experiment they performed, and take the viva at `/viva`.
+
+Each submitted answer is scored by the worker a few seconds later, at the rate the AI service
+allows, and the suggested marks appear on the Exams page. Answers saved before scoring existed can
+be queued with `python -m app.modules.scoring.requeue` (from backend/).
 
 Search a processed manual by experiment (from backend/):
 
@@ -94,4 +98,5 @@ cd backend
 python -m pytest
 ```
 
-runs the queue, ingestion, question pool, exam and viva session tests (needs `supabase start`).
+runs the queue, ingestion, question pool, exam, viva session and scoring tests (needs `supabase start`).
+The scoring tests use a stand-in for the AI service, so they cost no API credits.

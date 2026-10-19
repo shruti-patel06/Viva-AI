@@ -26,8 +26,17 @@ type Session = {
   current_position: number;
   ends_at: string | null;
   experiments: { title: string } | null;
-  session_questions: { count: number }[];
+  session_questions: { answers: OneOrMany<Answer> }[];
 };
+type Score = { ai_score: number | null; needs_review: boolean };
+type Answer = { id: string; scores: OneOrMany<Score> };
+// An embedded one-to-one row (each answer has at most one score) may come back as an object
+// or a one-item array, depending on how the relationship is detected.
+type OneOrMany<T> = T | T[] | null;
+
+function one<T>(value: OneOrMany<T>): T | null {
+  return Array.isArray(value) ? (value[0] ?? null) : value;
+}
 
 const POLL_MS = 5000;
 const STATE_STYLE: Record<ExamState, string> = {
@@ -323,7 +332,9 @@ function ExamCard({
         )}
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
-      {exam.state !== "draft" && <Sessions examId={exam.id} live={exam.state === "open"} />}
+      {exam.state !== "draft" && (
+        <Sessions examId={exam.id} live={exam.state === "open"} marksPerQuestion={exam.config.marks_per_question} />
+      )}
     </article>
   );
 }
@@ -331,22 +342,37 @@ function ExamCard({
 async function fetchSessions(examId: string): Promise<Session[]> {
   const { data } = await supabase
     .from("sessions")
-    .select("id, roll_number, state, current_position, ends_at, experiments(title), session_questions(count)")
+    .select(
+      "id, roll_number, state, current_position, ends_at, experiments(title), session_questions(answers(id, scores(ai_score, needs_review)))",
+    )
     .eq("exam_id", examId)
     .order("roll_number");
   return (data as unknown as Session[]) ?? [];
 }
 
 function progress(session: Session): string {
-  const total = session.session_questions[0]?.count ?? 0;
+  const total = session.session_questions.length;
   if (session.state === "joined") return "Joined, not started";
   if (session.state === "completed") return "Finished";
   if (session.ends_at && new Date(session.ends_at) < new Date()) return "Time up";
   return `Question ${session.current_position} of ${total}`;
 }
 
-function Sessions({ examId, live }: { examId: string; live: boolean }) {
+// The AI's suggested marks so far. Scores arrive a little after each answer, at the rate the
+// AI service allows, so some answers can still be waiting.
+function suggested(session: Session) {
+  const answers = session.session_questions.map((sq) => one(sq.answers)).filter((a): a is Answer => a !== null);
+  const scores = answers.map((a) => one(a.scores));
+  return {
+    marks: scores.reduce((sum, s) => sum + Number(s?.ai_score ?? 0), 0),
+    waiting: scores.filter((s) => s === null).length,
+    toReview: scores.filter((s) => s?.needs_review).length,
+  };
+}
+
+function Sessions({ examId, live, marksPerQuestion }: { examId: string; live: boolean; marksPerQuestion: number }) {
   const [sessions, setSessions] = useState<Session[]>([]);
+  const scoring = sessions.some((s) => suggested(s).waiting > 0);
 
   useEffect(() => {
     let active = true;
@@ -355,21 +381,24 @@ function Sessions({ examId, live }: { examId: string; live: boolean }) {
         if (active) setSessions(rows);
       });
     refresh();
-    // While the exam is open, students join and move on; check again every few seconds.
-    const timer = live ? setInterval(refresh, POLL_MS) : undefined;
+    // While the exam is open students join and move on, and scores keep arriving after it
+    // closes; check again every few seconds until both have settled.
+    const timer = live || scoring ? setInterval(refresh, POLL_MS) : undefined;
     return () => {
       active = false;
       clearInterval(timer);
     };
-  }, [examId, live]);
+  }, [examId, live, scoring]);
 
   if (sessions.length === 0) return <p className="text-sm text-zinc-500">No students have joined yet.</p>;
 
   const finished = sessions.filter((s) => s.state === "completed").length;
+  const waiting = sessions.reduce((sum, s) => sum + suggested(s).waiting, 0);
   return (
     <div className="space-y-2">
       <p className="text-sm text-zinc-600">
         {sessions.length} joined · {finished} finished
+        {waiting > 0 && ` · ${waiting} answer${waiting === 1 ? "" : "s"} waiting to be scored`}
       </p>
       <table className="w-full text-left text-sm">
         <thead className="text-zinc-500">
@@ -377,18 +406,34 @@ function Sessions({ examId, live }: { examId: string; live: boolean }) {
             <th className="py-1 font-normal">Roll number</th>
             <th className="py-1 font-normal">Experiment</th>
             <th className="py-1 font-normal">Progress</th>
+            <th className="py-1 font-normal">Suggested marks</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-100">
-          {sessions.map((s) => (
-            <tr key={s.id}>
-              <td className="py-1 font-mono">{s.roll_number}</td>
-              <td className="py-1">{s.experiments?.title}</td>
-              <td className="py-1">{progress(s)}</td>
-            </tr>
-          ))}
+          {sessions.map((s) => {
+            const score = suggested(s);
+            return (
+              <tr key={s.id}>
+                <td className="py-1 font-mono">{s.roll_number}</td>
+                <td className="py-1">{s.experiments?.title}</td>
+                <td className="py-1">{progress(s)}</td>
+                <td className="py-1">
+                  {score.marks.toFixed(1)} / {s.session_questions.length * marksPerQuestion}
+                  {score.waiting > 0 && <span className="text-zinc-500"> · scoring {score.waiting}…</span>}
+                  {score.toReview > 0 && (
+                    <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+                      {score.toReview} to check
+                    </span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
+      <p className="text-xs text-zinc-500">
+        Marks are the AI&apos;s suggestions until you review them. Answers marked &quot;to check&quot; need your judgement.
+      </p>
     </div>
   );
 }

@@ -24,6 +24,8 @@ from pydantic import BaseModel, Field, field_validator
 
 from app.core.auth import CurrentUser, require_student
 from app.core.db import transaction
+from app.jobs.queue import enqueue
+from app.modules.scoring.score_job import JOB_TYPE as SCORE_JOB
 from app.modules.sessions.draw import PoolIncomplete, draw_questions
 
 router = APIRouter(tags=["sessions"])
@@ -320,13 +322,17 @@ def submit_answer(session_id: UUID, answer: AnswerSubmit, student: Student) -> d
             return _view(conn, session_id)
 
         drawn = _current_question(conn, session, answer.position)
-        conn.execute(
+        answer_id = conn.execute(
             """
             insert into public.answers (session_question_id, text, hints_used, idempotency_key)
             values (%s, %s, %s, %s)
+            returning id
             """,
             (drawn["id"], answer.text.strip(), drawn["hints_used"], answer.idempotency_key),
-        )
+        ).fetchone()["id"]
+        # Scoring happens later, in the worker. The job is saved in the same transaction as
+        # the answer, so there is never an answer without its score job, or the other way round.
+        enqueue(conn, SCORE_JOB, {"answer_id": str(answer_id)})
         conn.execute(
             "update public.sessions set current_position = current_position + 1 where id = %s", (session_id,)
         )

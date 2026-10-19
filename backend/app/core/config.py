@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     groq_model: str = "openai/gpt-oss-120b"
     gemini_model: str = "gemini-2.5-flash"
+    # Per-minute limits of the provider's tier. The worker paces its calls to stay under them.
+    # Defaults are Groq's free tier for gpt-oss-120b; Gemini's free tier allows 10 requests.
+    llm_requests_per_minute: int = 30
+    llm_tokens_per_minute: int = 8000
 
     # Text to speech for question audio.
     sarvam_api_key: str = ""

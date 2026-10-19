@@ -74,7 +74,20 @@ def subject():
             (subject_id,),
         )
         conn.execute("delete from public.jobs where payload->>'teacher_id' = %s", (TEACHER_ID,))
-        # Exams first: their sessions point at the questions and the student logins.
+        # Score jobs name only their answer, so find them through the test teacher's exams.
+        conn.execute(
+            """
+            delete from public.jobs where type = 'score' and payload->>'answer_id' in (
+                select a.id::text from public.answers a
+                join public.session_questions sq on sq.id = a.session_question_id
+                join public.sessions s on s.id = sq.session_id
+                join public.exams e on e.id = s.exam_id
+                where e.teacher_id = %s
+            )
+            """,
+            (TEACHER_ID,),
+        )
+        # Exams next: their sessions point at the questions and the student logins.
         conn.execute("delete from public.exams where teacher_id = %s", (TEACHER_ID,))
         conn.execute("delete from auth.users where id = any(%s::uuid[])", (STUDENTS,))
         conn.execute("delete from public.questions where teacher_id = %s", (TEACHER_ID,))
