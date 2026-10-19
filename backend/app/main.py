@@ -12,6 +12,7 @@ from app.modules.auth.router import router as auth_router
 from app.modules.exams.router import router as exams_router
 from app.modules.ingestion.router import router as ingestion_router
 from app.modules.questions.router import router as questions_router
+from app.modules.reports.router import router as reports_router
 from app.modules.sessions.router import router as sessions_router
 
 
@@ -28,6 +29,8 @@ app.add_middleware(
     allow_origins=[get_settings().web_origin],
     allow_methods=["*"],
     allow_headers=["*"],
+    # Lets the web app read a report's file name from its download.
+    expose_headers=["Content-Disposition"],
 )
 
 
@@ -36,6 +39,7 @@ app.include_router(ingestion_router)
 app.include_router(questions_router)
 app.include_router(exams_router)
 app.include_router(sessions_router)
+app.include_router(reports_router)
 
 
 @app.get("/health")
