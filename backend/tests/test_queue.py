@@ -178,3 +178,16 @@ def test_job_abandoned_on_its_last_attempt_is_given_up():
     assert job_row(job_id)["status"] == "failed"
     assert recorder.runs == 0
     assert recorder.gave_up_with is not None
+
+
+def test_a_higher_priority_job_is_claimed_first():
+    with transaction() as conn:
+        older = queue.enqueue(conn, "test_job", {"n": 1})
+        urgent = queue.enqueue(conn, "test_job", {"n": 2}, priority=10)
+
+    with transaction() as conn:
+        first = queue.claim_next(conn, ["test_job"])
+    with transaction() as conn:
+        second = queue.claim_next(conn, ["test_job"])
+
+    assert (first.id, second.id) == (urgent, older)
