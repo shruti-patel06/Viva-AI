@@ -40,6 +40,8 @@ async function fetchQuestions(): Promise<Question[]> {
     .select(
       "id, type, difficulty, question_text, reference_answer, key_points, hints, status, audio_path, experiments(title, position)",
     )
+    // Questions written live from a student's own program belong to that viva, not the pool.
+    .neq("status", "live")
     .order("created_at");
   return (data as unknown as Question[]) ?? [];
 }

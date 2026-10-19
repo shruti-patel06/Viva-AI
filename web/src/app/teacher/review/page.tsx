@@ -28,6 +28,7 @@ type Answer = {
   reviewed_by: string | null;
   final: number | null;
   status: Status;
+  live: boolean;
 };
 type Student = { session_id: string; roll_number: string; experiment: string; total: number; answers: Answer[] };
 type Sheet = {
@@ -113,6 +114,9 @@ function Review() {
   const toCheck = sheet.students.flatMap((s) =>
     s.answers.filter((a) => a.status === "to_check" || a.status === "scoring").map((a) => ({ student: s, answer: a })),
   );
+  const live = sheet.students.flatMap((s) =>
+    s.answers.filter((a) => a.live && a.status !== "to_check" && a.status !== "scoring").map((a) => ({ student: s, answer: a })),
+  );
   const count = Math.max(0, ...sheet.students.map((s) => s.answers.length));
 
   return (
@@ -146,6 +150,26 @@ function Review() {
           {toCheck.map(({ student, answer }) => (
             <AnswerCard
               key={`${student.session_id}-${answer.position}`}
+              roll={student.roll_number}
+              answer={answer}
+              outOf={sheet.marks_per_question}
+              editable={editable}
+              onChange={load}
+            />
+          ))}
+        </section>
+      )}
+
+      {live.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="font-medium">Generated live ({live.length})</h2>
+          <p className="text-sm text-zinc-500">
+            Each student had one question written during the viva from their own program, without your approval. Check
+            these questions and their marks before approving.
+          </p>
+          {live.map(({ student, answer }) => (
+            <AnswerCard
+              key={`live-${student.session_id}-${answer.position}`}
               roll={student.roll_number}
               answer={answer}
               outOf={sheet.marks_per_question}
@@ -332,6 +356,9 @@ function AnswerCard({
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <p className="font-medium">
           <span className="font-mono">{roll}</span> · Q{answer.position} · {answer.type.replaceAll("_", " ")}
+          {answer.live && (
+            <span className="ml-2 rounded-full bg-violet-100 px-2 py-0.5 text-xs text-violet-800">generated live</span>
+          )}
         </p>
         <p className="text-zinc-600">
           Final: <span className="font-medium text-zinc-900">{answer.final ?? "…"}</span> / {outOf}
