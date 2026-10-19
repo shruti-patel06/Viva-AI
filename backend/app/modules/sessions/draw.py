@@ -18,7 +18,9 @@ class PoolIncomplete(Exception):
 
 
 def missing_slots(conn: Connection, teacher_id: UUID, experiment_ids: list[str], slots: list[dict[str, Any]]) -> list[str]:
-    """Each slot with no approved question to draw, as "Experiment: type (difficulty)"."""
+    """Each slot with no approved question to draw, as "Experiment: type (difficulty)".
+    Live slots are written during the viva, so they need nothing from the pool."""
+    slots = [slot for slot in slots if not slot.get("live")]
     rows = conn.execute(
         """
         select x.title, slot.type, slot.difficulty
@@ -38,8 +40,11 @@ def missing_slots(conn: Connection, teacher_id: UUID, experiment_ids: list[str],
 
 
 def draw_questions(conn: Connection, session_id: UUID, exam: dict[str, Any], experiment_id: UUID) -> None:
-    """Add one session_questions row per slot, in the slot order of the exam's mix."""
+    """Add one session_questions row per pool slot, at its position in the exam's mix. A live
+    slot's row is added later, when its question has been written (see own_code.py)."""
     for position, slot in enumerate(exam["config"]["slots"], start=1):
+        if slot.get("live"):
+            continue
         drawn = conn.execute(
             """
             insert into public.session_questions (session_id, question_id, position)
