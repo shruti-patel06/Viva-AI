@@ -10,4 +10,6 @@ httpx==0.28.1
 pymupdf==1.28.2
 chromadb==1.5.9
 google-genai==2.31.0
+openpyxl==3.1.5
+fpdf2==2.8.9
 pytest==9.1.1
