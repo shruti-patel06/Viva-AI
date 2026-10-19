@@ -29,6 +29,8 @@ app.add_middleware(
     allow_origins=[get_settings().web_origin],
     allow_methods=["*"],
     allow_headers=["*"],
+    # Lets the web app read a report's file name from its download.
+    expose_headers=["Content-Disposition"],
 )
 
 
